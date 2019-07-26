@@ -873,16 +873,16 @@ function printPackage(pkg) {
   const sources = filterFiles(pkg._files, INCLUDED_FILES);
   const dtsSources = filterFiles(pkg._files, ['.d.ts']);
   // TODO(gmagolan): add UMD & AMD scripts to scripts even if not an APF package _but_ only if they
-  // are named?
-  const scripts = getNgApfScripts(pkg);
+  // are named
+  const namedSources = getNgApfScripts(pkg);
   const deps = [pkg].concat(pkg._dependencies.filter(dep => dep !== pkg && !dep._isNested));
 
   let scriptStarlark = '';
-  if (scripts.length) {
+  if (namedSources.length) {
     scriptStarlark = `
     # subset of srcs that are javascript named-UMD or named-AMD scripts
-    scripts = [
-        ${scripts.map(f => `"//:node_modules/${pkg._dir}/${f}",`).join('\n        ')}
+    named_sources = [
+        ${namedSources.map(f => `"//:node_modules/${pkg._dir}/${f}",`).join('\n        ')}
     ],`;
   }
 

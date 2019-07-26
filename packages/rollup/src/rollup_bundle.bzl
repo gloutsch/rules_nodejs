@@ -1,5 +1,6 @@
 "Rules for running Rollup under Bazel"
 
+load("@build_bazel_rules_nodejs//:providers.bzl", "JSEcmaScriptModuleInfo", "JSModuleInfo")
 load("@build_bazel_rules_nodejs//internal/linker:link_node_modules.bzl", "module_mappings_aspect", "register_node_modules_linker")
 
 _DOC = """Runs the Rollup.js CLI under Bazel.
@@ -225,10 +226,26 @@ def _rollup_outs(sourcemap, name, entry_point, entry_points, output_dir):
 def _no_ext(f):
     return f.short_path[:-len(f.extension) - 1]
 
+def _filter_js(files):
+    return [f for f in files if f.extension == "js" or f.extension == "mjs"]
+
 def _rollup_bundle(ctx):
     "Generate a rollup config file and run rollup"
 
-    inputs = ctx.files.entry_point + ctx.files.entry_points + ctx.files.srcs + ctx.files.deps
+    # rollup_bundle supports deps with JS providers. For each dep,
+    # JSEcmaScriptModuleInfo is used if found, then JSModuleInfo and finally
+    # the DefaultInfo files are used if the former providers are not found.
+    deps_depsets = []
+    for dep in ctx.attr.deps:
+        if JSEcmaScriptModuleInfo in dep:
+            deps_depsets.append(dep[JSEcmaScriptModuleInfo].sources)
+        elif JSModuleInfo in dep:
+            deps_depsets.append(dep[JSModuleInfo].sources)
+        elif hasattr(dep, "files"):
+            deps_depsets.append(dep.files)
+    deps_inputs = depset(transitive = deps_depsets).to_list()
+
+    inputs = _filter_js(ctx.files.entry_point) + _filter_js(ctx.files.entry_points) + ctx.files.srcs + deps_inputs
     outputs = [getattr(ctx.outputs, o) for o in dir(ctx.outputs)]
 
     # See CLI documentation at https://rollupjs.org/guide/en/#command-line-reference
@@ -290,8 +307,11 @@ def _rollup_bundle(ctx):
         arguments = [args],
     )
 
+    outputs_depset = depset(outputs)
+
     return [
-        DefaultInfo(files = depset(outputs)),
+        DefaultInfo(files = outputs_depset),
+        JSModuleInfo(module_format = ctx.attr.format, sources = outputs_depset),
     ]
 
 rollup_bundle = rule(

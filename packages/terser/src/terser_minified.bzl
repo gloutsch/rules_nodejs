@@ -14,6 +14,8 @@
 
 "Rule to run the terser binary under bazel"
 
+load("@build_bazel_rules_nodejs//:providers.bzl", "JSModuleInfo")
+
 _DOC = """Run the terser minifier.
 
 Typical example:
@@ -40,7 +42,7 @@ Can be a .js file, a rule producing .js files as its default output, or a rule p
 
 Note that you can pass multiple files to terser, which it will bundle together.
 If you want to do this, you can pass a filegroup here.""",
-        allow_files = [".js"],
+        allow_files = True,
         mandatory = True,
     ),
     "config_file": attr.label(
@@ -100,12 +102,21 @@ def _terser(ctx):
 
     # CLI arguments; see https://www.npmjs.com/package/terser#command-line-usage
     args = ctx.actions.args()
-    inputs = ctx.files.src[:]
+
+    # If src has a JSModuleInfo provider than use that otherwise use DefaultInfo files
+    if JSModuleInfo in ctx.attr.src:
+        sources = ctx.attr.src[JSModuleInfo].sources.to_list()
+        module_format = ctx.attr.src[JSModuleInfo].module_format
+    else:
+        sources = ctx.files.src[:]
+        module_format = ""
+
+    inputs = sources[:]
     outputs = []
 
-    directory_srcs = [s for s in ctx.files.src if s.is_directory]
+    directory_srcs = [s for s in sources if s.is_directory]
     if len(directory_srcs) > 0:
-        if len(ctx.files.src) > 1:
+        if len(sources) > 1:
             fail("When directories are passed to terser_minified, there should be only one input")
         outputs.append(ctx.actions.declare_directory(ctx.label.name))
     else:
@@ -113,7 +124,7 @@ def _terser(ctx):
         if ctx.attr.sourcemap:
             outputs.append(ctx.actions.declare_file("%s.js.map" % ctx.label.name))
 
-    args.add_all([s.path for s in ctx.files.src])
+    args.add_all([s.path for s in sources])
     args.add_all(["--output", outputs[0].path])
 
     debug = ctx.attr.debug or "DEBUG" in ctx.var.keys()
@@ -156,6 +167,7 @@ def _terser(ctx):
 
     return [
         DefaultInfo(files = depset(outputs)),
+        JSModuleInfo(module_format = module_format, sources = depset(outputs)),
     ]
 
 terser_minified = rule(

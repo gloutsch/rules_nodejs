@@ -1,10 +1,12 @@
-load("@build_bazel_rules_nodejs//:defs.bzl", "rollup_bundle")
 load("@build_bazel_rules_nodejs//internal/web_package:web_package.bzl", "web_package")
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//nodejs:image.bzl", "nodejs_image")
 load("@io_bazel_rules_sass//:defs.bzl", "sass_binary")
+load("@npm//@babel/cli:index.bzl", "babel")
 load("@npm//history-server:index.bzl", "history_server")
 load("@npm_angular_bazel//:index.bzl", "ng_module")
+load("@npm_bazel_rollup//:index.bzl", "rollup_bundle")
+load("@npm_bazel_terser//:index.bzl", "terser_minified")
 load("@npm_bazel_typescript//:index.bzl", "ts_config", "ts_devserver", "ts_library")
 
 package(default_visibility = ["//:__subpackages__"])
@@ -134,6 +136,37 @@ rollup_bundle(
     ],
 )
 
+babel(
+    name = "bundle.es2015",
+    outs = [
+        "bundle.es2015.js",
+        "bundle.es2015.js.map",
+    ],
+    args = [
+        "$(location :bundle.js)",
+        "--no-babelrc",
+        "--source-maps",
+        "--presets=@babel/preset-env",
+        "--out-file",
+        "$(location :bundle.es2015.js)",
+    ],
+    data = [
+        "bundle.js",
+        "bundle.js.map",
+        "@npm//@babel/preset-env",
+    ],
+)
+
+terser_minified(
+    name = "bundle.min",
+    src = ":bundle",
+)
+
+terser_minified(
+    name = "bundle.min.es2015",
+    src = ":bundle.es2015",
+)
+
 web_package(
     name = "prodapp",
     # In production mode we serve some polyfills with script tags that have hard-coded paths in the index.html
@@ -146,11 +179,10 @@ web_package(
     assets = _ASSETS + [
         # For differential loading, we supply both an ESModule entry point and an es5 entry point
         # The injector will put two complimentary script tags in the example.html
-        ":bundle.min.js",
-        ":bundle.min.es2015.js",
+        ":bundle.min",
+        ":bundle.min.es2015",
     ],
     data = [
-        ":bundle",
         "//src/assets",
         # Include polyfills that will be requested by old browsers
         "@npm//:node_modules/systemjs/dist/system.js",

@@ -97,23 +97,31 @@ so that it only affects the current build.
     ),
 }
 
+def _filter_js(files):
+    return [f for f in files if f.is_directory or f.extension == "js" or f.extension == "mjs"]
+
+def _filter_sourcemap(files):
+    return [f for f in files if f.basename.endswith(".js.map")]
+
 def _terser(ctx):
     "Generate actions to create terser config run terser"
 
     # CLI arguments; see https://www.npmjs.com/package/terser#command-line-usage
     args = ctx.actions.args()
 
-    # If src has a JSModuleInfo provider than use that otherwise use DefaultInfo files
-    if JSModuleInfo in ctx.attr.src:
-        sources = ctx.attr.src[JSModuleInfo].sources.to_list()
-        module_format = ctx.attr.src[JSModuleInfo].module_format
-    else:
-        sources = ctx.files.src[:]
-        module_format = ""
-
-    inputs = sources[:]
+    inputs = []
     outputs = []
 
+    # If src has a JSModuleInfo provider than use that otherwise use DefaultInfo files
+    if JSModuleInfo in ctx.attr.src:
+        inputs.extend(ctx.attr.src[JSModuleInfo].sources.to_list())
+        module_format = ctx.attr.src[JSModuleInfo].module_format
+    else:
+        inputs.extend(ctx.files.src[:])
+        module_format = ""
+
+    sources = _filter_js(inputs)
+    sourcemaps = _filter_sourcemap(inputs)
     directory_srcs = [s for s in sources if s.is_directory]
     if len(directory_srcs) > 0:
         if len(sources) > 1:
@@ -137,9 +145,12 @@ def _terser(ctx):
         # see https://github.com/terser-js/terser#command-line-usage
         source_map_opts = ["includeSources", "base=" + ctx.bin_dir.path]
 
-        # We support only inline sourcemaps for now.
-        # It's hard to pair up the .js inputs with corresponding .map files
-        source_map_opts.append("content=inline")
+        if len(sourcemaps) == 0:
+            source_map_opts.append("content=inline")
+        elif len(sourcemaps) == 1:
+            source_map_opts.append("content='%s'" % sourcemaps[0].path)
+        else:
+            fail("When sourcemap is True, there should only be one or none input sourcemaps")
 
         # This option doesn't work in the config file, only on the CLI
         args.add_all(["--source-map", ",".join(source_map_opts)])

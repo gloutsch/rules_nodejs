@@ -99,7 +99,7 @@ rollup_bundle(
 )
 ```
 """,
-        allow_single_file = [".js"],
+        allow_single_file = True,
     ),
     "entry_points": attr.label_keyed_string_dict(
         doc = """The bundle's entry points (e.g. your main.js or app.js or index.js).
@@ -178,7 +178,7 @@ def _desugar_entry_point_names(name, entry_point, entry_points):
         return [name]
     return entry_points.values()
 
-def _desugar_entry_points(name, entry_point, entry_points):
+def _desugar_entry_points(name, entry_point, entry_points, inputs):
     """Like above, but used by the implementation function, where the types differ.
 
     It also performs validation:
@@ -190,7 +190,7 @@ def _desugar_entry_points(name, entry_point, entry_points):
     names = _desugar_entry_point_names(name, entry_point.label if entry_point else None, entry_points)
 
     if entry_point:
-        return {entry_point.files.to_list()[0]: names[0]}
+        return {_resolve_js_input(entry_point.files.to_list()[0], inputs): names[0]}
 
     result = {}
     for ep in entry_points.items():
@@ -199,8 +199,20 @@ def _desugar_entry_points(name, entry_point, entry_points):
         f = entry_point.files.to_list()
         if len(f) != 1:
             fail("keys in rollup_bundle#entry_points must provide one file, but %s has %s" % (entry_point.label, len(f)))
-        result[f[0]] = name
+        result[_resolve_js_input(f[0], inputs)] = name
     return result
+
+def _resolve_js_input(f, inputs):
+    if f.extension == "js" or f.extension == "mjs":
+        return f
+
+    # look for corresponding js file in inputs
+    no_ext = _no_ext(f)
+    for i in inputs:
+        if i.extension == "js" or i.extension == "mjs":
+            if _no_ext(i) == no_ext:
+                return i
+    fail("Could not find corresponding javascript entry point for %s. Add the %s.js to your deps." % (f.path, no_ext))
 
 def _rollup_outs(sourcemap, name, entry_point, entry_points, output_dir):
     """Supply some labelled outputs in the common case of a single entry point"""
@@ -254,16 +266,16 @@ def _rollup_bundle(ctx):
     # List entry point argument first to save some argv space
     # Rollup doc says
     # When provided as the first options, it is equivalent to not prefix them with --input
-    entry_points = _desugar_entry_points(ctx.label.name, ctx.attr.entry_point, ctx.attr.entry_points).items()
+    entry_points = _desugar_entry_points(ctx.label.name, ctx.attr.entry_point, ctx.attr.entry_points, inputs).items()
 
     # If user requests an output_dir, then use output.dir rather than output.file
     if ctx.attr.output_dir:
         outputs.append(ctx.actions.declare_directory(ctx.label.name))
         for entry_point in entry_points:
-            args.add_joined([entry_point[1], _no_ext(entry_point[0])], join_with = "=")
+            args.add_joined([entry_point[1], entry_point[0]], join_with = "=")
         args.add_all(["--output.dir", outputs[0].path])
     else:
-        args.add(_no_ext(entry_points[0][0]))
+        args.add(entry_points[0][0])
         args.add_all(["--output.file", outputs[0].path])
 
     args.add_all(["--format", ctx.attr.format])

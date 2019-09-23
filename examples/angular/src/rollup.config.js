@@ -1,5 +1,6 @@
 const node = require('rollup-plugin-node-resolve');
 const amd = require('rollup-plugin-amd');
+const commonjs = require('rollup-plugin-commonjs');
 
 module.exports = {
   plugins: [
@@ -12,5 +13,6 @@ module.exports = {
       // with the amd plugin.
       include: /\.ngfactory\.js$/i,
     }),
+    commonjs(),
   ],
 };

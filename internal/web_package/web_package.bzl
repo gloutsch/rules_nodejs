@@ -92,7 +92,7 @@ def _web_package(ctx):
     root_paths = additional_root_paths(ctx)
 
     # Create the output file in a re-rooted subdirectory so it doesn't collide with the input file
-    html = ctx.actions.declare_file("_%s/%s" % (ctx.label.name, ctx.file.index_html.path))
+    html = ctx.actions.declare_file("/".join(["_" + ctx.label.name, ctx.label.package, ctx.file.index_html.basename]))
 
     # Move that index file back into place inside the package
     populated_index = html_asset_inject(
